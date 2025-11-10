@@ -1,42 +1,61 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
-  }
-
-  const { videoUrl, apiKey } = req.body;
-
-  if (!videoUrl || !apiKey) {
-    return res.status(400).json({ message: 'Video URL and API key are required' });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    // Initialize the Gemini API with your API key
-    const genAI = new GoogleGenerativeAI(apiKey);
+    const { video, api_key } = req.body;
+
+    if (!video || !api_key) {
+      return res.status(400).json({ error: 'Video file and API key are required' });
+    }
+
+    // Initialize Gemini API
+    const genAI = new GoogleGenerativeAI(api_key);
     
-    // Get the generative model
-    const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
+    // Get the model - using gemini-pro-vision for video analysis
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    // Convert video buffer to base64
+    const videoBuffer = Buffer.from(await video.arrayBuffer());
+    const videoBase64 = videoBuffer.toString('base64');
     
-    // For video processing, we need to fetch the video data
-    // Note: This is a simplified approach. In a production environment,
-    // you might need to handle video processing differently
-    const response = await model.generateContent([
-      "Analyze this video and provide insights in Bangla",
+    // Prepare the prompt
+    const prompt = "এই ভিডিওটি বিশ্লেষণ করুন এবং বাংলায় বিস্তারিত অন্তর্দৃষ্টি প্রদান করুন। ভিডিওর মূল বিষয়বস্তু, গুরুত্বপূর্ণ পয়েন্ট, এবং সম্ভাব্য সুপারিশগুলি অন্তর্ভুক্ত করুন।";
+
+    // Generate content
+    const result = await model.generateContent([
+      prompt,
       {
         inlineData: {
-          mimeType: "video/mp4",
-          data: videoUrl
+          mimeType: video.type,
+          data: videoBase64
         }
       }
     ]);
-    
-    const result = response.response;
-    const text = result.text();
-    
+
+    const response = await result.response;
+    const text = response.text();
+
     res.status(200).json({ result: text });
   } catch (error) {
     console.error('Error processing video:', error);
-    res.status(500).json({ message: 'Error processing video', error: error.message });
+    
+    // Handle specific API errors
+    if (error.status === 400) {
+      return res.status(400).json({ error: 'Invalid API key or request format' });
+    }
+    
+    if (error.status === 403) {
+      return res.status(403).json({ error: 'API key does not have permission to access this resource' });
+    }
+    
+    if (error.status === 429) {
+      return res.status(429).json({ error: 'API rate limit exceeded. Please try again later' });
+    }
+    
+    res.status(500).json({ error: 'Failed to process video. Please try again.' });
   }
 }
