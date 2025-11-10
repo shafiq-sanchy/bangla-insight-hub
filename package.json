@@ -1,4 +1,25 @@
 {
+  "name": "bangla-insight-hub",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.1.3",
+    "axios": "^1.6.0",
+    "next": "14.0.0",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "eslint": "^8",
+    "eslint-config-next": "14.0.0"
+  },
+{
   "name": "vite_react_shadcn_ts",
   "private": true,
   "version": "0.0.0",
