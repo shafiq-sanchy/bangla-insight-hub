@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import VideoProcessor from '../components/VideoProcessor';
+import VideoUpload from '../components/VideoUpload';
 import styles from '../styles/Home.module.css';
 
 export default function Home() {
@@ -7,33 +7,25 @@ export default function Home() {
     <div className={styles.container}>
       <Head>
         <title>Bangla Insight Hub</title>
-        <meta name="description" content="Generate insights from videos using AI" />
+        <meta name="description" content="AI-powered video analysis in Bangla" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <main className={styles.main}>
-        <h1 className={styles.title}>
-          Bangla Insight Hub
-        </h1>
+        <div className={styles.header}>
+          <h1 className={styles.title}>Bangla Insight Hub</h1>
+          <p className={styles.description}>
+            Upload your videos to get AI-powered insights in Bangla
+          </p>
+        </div>
 
-        <p className={styles.description}>
-          Upload a video to generate insights in Bangla using AI
-        </p>
-
-        <div className={styles.grid}>
-          <VideoProcessor />
+        <div className={styles.content}>
+          <VideoUpload />
         </div>
       </main>
 
       <footer className={styles.footer}>
-        <a
-          href="https://vercel.com?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Powered by{' '}
-          <img src="/vercel.svg" alt="Vercel Logo" className={styles.logo} />
-        </a>
+        <p>Powered by Google Gemini AI</p>
       </footer>
     </div>
   );
