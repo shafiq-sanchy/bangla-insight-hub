@@ -2,7 +2,10 @@ import { useState } from "react";
 import { FileUpload } from "@/components/FileUpload";
 import { ProcessingStatus } from "@/components/ProcessingStatus";
 import { Results } from "@/components/Results";
+import { ApiSettings } from "@/components/ApiSettings";
 import { FileText } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 export type ProcessingResult = {
   transcription: string;
@@ -13,21 +16,80 @@ export type ProcessingResult = {
 const Index = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<ProcessingResult | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [apiKeys, setApiKeys] = useState<{ geminiApiKey?: string; openaiApiKey?: string }>({});
 
   const handleFilesSelected = async (files: File[]) => {
     setIsProcessing(true);
     setResults(null);
     
-    // TODO: Call backend to process files
-    // For now, simulate processing
-    setTimeout(() => {
-      setResults({
-        transcription: "Sample English transcription...",
-        translation: "নমুনা বাংলা অনুবাদ...",
-        summary: "সংক্ষিপ্ত বিবরণ এবং অর্থ..."
+    try {
+      // Prepare form data
+      const formData = new FormData();
+      files.forEach(file => formData.append('files', file));
+      
+      if (apiKeys.geminiApiKey) {
+        formData.append('geminiApiKey', apiKeys.geminiApiKey);
+      }
+      if (apiKeys.openaiApiKey) {
+        formData.append('openaiApiKey', apiKeys.openaiApiKey);
+      }
+
+      // Call edge function
+      const { data, error } = await supabase.functions.invoke('process-files', {
+        body: formData,
       });
+
+      if (error) throw error;
+
+      const newJobId = data.jobId;
+      setJobId(newJobId);
+
+      // Poll for results
+      const pollInterval = setInterval(async () => {
+        const { data: job, error: jobError } = await supabase
+          .from('processing_jobs')
+          .select('*')
+          .eq('id', newJobId)
+          .single();
+
+        if (jobError) {
+          clearInterval(pollInterval);
+          toast.error('Error fetching job status');
+          setIsProcessing(false);
+          return;
+        }
+
+        if (job.status === 'completed') {
+          clearInterval(pollInterval);
+          setResults({
+            transcription: job.transcription,
+            translation: job.translation,
+            summary: job.summary,
+          });
+          setIsProcessing(false);
+          toast.success('Processing completed!');
+        } else if (job.status === 'failed') {
+          clearInterval(pollInterval);
+          toast.error(job.error || 'Processing failed');
+          setIsProcessing(false);
+        }
+      }, 3000);
+
+      // Stop polling after 10 minutes
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        if (isProcessing) {
+          toast.error('Processing timeout');
+          setIsProcessing(false);
+        }
+      }, 600000);
+
+    } catch (error) {
+      console.error('Error processing files:', error);
+      toast.error('Failed to start processing');
       setIsProcessing(false);
-    }, 3000);
+    }
   };
 
   return (
@@ -35,9 +97,12 @@ const Index = () => {
       {/* Header */}
       <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-semibold text-foreground">TranslateBD</h1>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText className="h-6 w-6 text-primary" />
+              <h1 className="text-xl font-semibold text-foreground">TranslateBD</h1>
+            </div>
+            <ApiSettings onKeysChange={setApiKeys} />
           </div>
         </div>
       </header>
