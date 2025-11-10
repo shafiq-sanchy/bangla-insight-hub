@@ -24,72 +24,133 @@ const Index = () => {
     setResults(null);
     
     try {
+      console.log('Preparing to upload files:', files.map(f => f.name));
+      
+      // Validate files
+      if (!files || files.length === 0) {
+        throw new Error('No files selected');
+      }
+
+      // Check file types
+      const invalidFiles = files.filter(file => {
+        const type = file.type;
+        return !type.startsWith('audio/') && 
+               !type.startsWith('video/') && 
+               type !== 'application/pdf';
+      });
+
+      if (invalidFiles.length > 0) {
+        throw new Error(`Unsupported file types: ${invalidFiles.map(f => f.name).join(', ')}`);
+      }
+
       // Prepare form data
       const formData = new FormData();
-      files.forEach(file => formData.append('files', file));
+      files.forEach(file => {
+        console.log(`Adding file: ${file.name} (${file.type}, ${file.size} bytes)`);
+        formData.append('files', file);
+      });
       
+      // Add API keys if provided
       if (apiKeys.geminiApiKey) {
+        console.log('Adding user Gemini API key');
         formData.append('geminiApiKey', apiKeys.geminiApiKey);
       }
       if (apiKeys.openaiApiKey) {
+        console.log('Adding user OpenAI API key');
         formData.append('openaiApiKey', apiKeys.openaiApiKey);
       }
 
       // Call edge function
+      console.log('Calling process-files edge function...');
       const { data, error } = await supabase.functions.invoke('process-files', {
         body: formData,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to start processing');
+      }
+
+      if (!data || !data.jobId) {
+        throw new Error('No job ID returned from server');
+      }
 
       const newJobId = data.jobId;
+      console.log('Job created:', newJobId);
       setJobId(newJobId);
+      toast.success('Processing started!');
 
       // Poll for results
+      let attempts = 0;
+      const maxAttempts = 200; // 200 * 3 seconds = 10 minutes
+      
       const pollInterval = setInterval(async () => {
-        const { data: job, error: jobError } = await supabase
-          .from('processing_jobs')
-          .select('*')
-          .eq('id', newJobId)
-          .single();
+        attempts++;
+        console.log(`Polling attempt ${attempts}/${maxAttempts}`);
 
-        if (jobError) {
-          clearInterval(pollInterval);
-          toast.error('Error fetching job status');
-          setIsProcessing(false);
-          return;
-        }
+        try {
+          const { data: job, error: jobError } = await supabase
+            .from('processing_jobs')
+            .select('*')
+            .eq('id', newJobId)
+            .single();
 
-        if (job.status === 'completed') {
-          clearInterval(pollInterval);
-          setResults({
-            transcription: job.transcription,
-            translation: job.translation,
-            summary: job.summary,
-          });
-          setIsProcessing(false);
-          toast.success('Processing completed!');
-        } else if (job.status === 'failed') {
-          clearInterval(pollInterval);
-          toast.error(job.error || 'Processing failed');
-          setIsProcessing(false);
-        }
-      }, 3000);
+          if (jobError) {
+            console.error('Error fetching job:', jobError);
+            clearInterval(pollInterval);
+            toast.error('Error checking job status');
+            setIsProcessing(false);
+            return;
+          }
 
-      // Stop polling after 10 minutes
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        if (isProcessing) {
-          toast.error('Processing timeout');
+          console.log('Job status:', job.status);
+
+          if (job.status === 'completed') {
+            clearInterval(pollInterval);
+            
+            if (!job.transcription || !job.translation || !job.summary) {
+              toast.error('Processing completed but results are incomplete');
+              setIsProcessing(false);
+              return;
+            }
+
+            setResults({
+              transcription: job.transcription,
+              translation: job.translation,
+              summary: job.summary,
+            });
+            setIsProcessing(false);
+            toast.success('Processing completed successfully!');
+          } else if (job.status === 'failed') {
+            clearInterval(pollInterval);
+            const errorMsg = job.error || 'Processing failed';
+            console.error('Job failed:', errorMsg);
+            toast.error(errorMsg);
+            setIsProcessing(false);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            toast.error('Processing timeout - taking too long');
+            setIsProcessing(false);
+          }
+        } catch (pollError) {
+          console.error('Error during polling:', pollError);
+          clearInterval(pollInterval);
+          toast.error('Error checking processing status');
           setIsProcessing(false);
         }
-      }, 600000);
+      }, 3000); // Poll every 3 seconds
 
     } catch (error) {
       console.error('Error processing files:', error);
-      toast.error('Failed to start processing');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      toast.error(errorMessage);
       setIsProcessing(false);
     }
+  };
+
+  const handleNewUpload = () => {
+    setResults(null);
+    setJobId(null);
   };
 
   return (
@@ -124,6 +185,13 @@ const Index = () => {
 
             {/* Upload Section */}
             <FileUpload onFilesSelected={handleFilesSelected} />
+
+            {/* API Key Notice */}
+            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-sm text-blue-800 dark:text-blue-200 text-center">
+                💡 <strong>Tip:</strong> Provide your own API keys in settings to avoid rate limits and ensure faster processing.
+              </p>
+            </div>
 
             {/* Features */}
             <div className="mt-16 grid md:grid-cols-3 gap-6">
@@ -165,7 +233,7 @@ const Index = () => {
         {!isProcessing && results && (
           <Results 
             results={results} 
-            onNewUpload={() => setResults(null)}
+            onNewUpload={handleNewUpload}
           />
         )}
       </main>
